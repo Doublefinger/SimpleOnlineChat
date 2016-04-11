@@ -17,7 +17,7 @@ Room.prototype.addPerson = function(personID) {
 Room.prototype.removePerson = function(personID) {
     for(var i = 0; i < this.people.length; i++){
         if(this.people[i] === personID){
-            this.people.remove(i);
+            this.people.splice(i, 1);
             break;
         }
     }

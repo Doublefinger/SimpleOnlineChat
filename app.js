@@ -6,9 +6,9 @@ var logger = require('morgan');
 var cookieParser = require('cookie-parser');
 var bodyParser = require('body-parser');
 var validator = require('validator');
-var underscore = require('underscore');
-var Room = require('room.js');
-var User = require('user.js');
+var _ = require('underscore')._;
+var Room = require('./room.js');
+var User = require('./user.js');
 
 var app = express();
 
@@ -79,9 +79,28 @@ function updateUserList(room) {
     return users_in_room;
 }
 
+function getRoomList() {
+    var room_names = [];
+    for (var index in rooms) {
+        var room = rooms[index];
+        if (room.checkPassword(null)) {
+            //no password
+            room_names.push({name: room.name, password: false});
+        } else {
+            room_names.push({name: room.name, password: true});
+        }
+    }
+    return room_names;
+}
+
+//inspired by https://github.com/tamaspiros/advanced-chat
 io.on('connection', function (socket) {
     //return room list when user logged in
     socket.on("join_server", function (name) {
+        if (!name) {
+            socket.emit("message_to_client", "Please sign in first");
+            return;
+        }
         var exists = false;
         var name = validator.escape(name);
         _.find(users, function (key) {
@@ -98,8 +117,41 @@ io.on('connection', function (socket) {
             io.emit("total_user", {count: _.size(users)});
             //message to sender
             socket.emit("message_to_client", "You have connected to the server.");
-            socket.emit("room_list", {rooms: rooms, count: _.size(rooms)});
+            socket.emit("create_room_list", {rooms: getRoomList(), count: _.size(rooms)});
+            socket.emit("server_joined", name, socket.id);
             sockets.push(socket);
+        }
+    });
+
+    socket.on("disconnect", function () {
+        if (typeof users[socket.id] !== "undefined") {
+            var user = users[socket.id];
+            var name = user.inroom;
+            if (name) {
+                var room = rooms[name];
+                room.removePerson(socket.id);
+                //check if the user is the owner of the room
+                //remember the last one who left the room must be the owner
+                if (user.ownsRoom(name)) {
+                    if (room.isEmpty()) {
+                        delete room;
+                        io.emit("remove_room", {room: name, count: _.size(rooms)});
+                        io.emit("message_to_client", "Room: " + name + "has been removed");
+                    } else {
+                        //tranfer the onwership to the next owner
+                        var new_ownerID = room.transferOwner(false);
+                        io.to(name).emit("message_to_client", "The owner of room is transferred to " + users[new_ownerID].name + ".");
+                    }
+                }
+                io.to(name).emit("message_to_client", "User: " + user.name + " has left the room.");
+                io.to(name).emit("remove_user", {
+                    user: socket.id,
+                    owner: room.owner,
+                    count: _.size(room.people)
+                });
+            }
+            delete users[socket.id];
+            io.emit("total_user", {count: _.size(users)});
         }
     });
 
@@ -109,26 +161,36 @@ io.on('connection', function (socket) {
         } else if (users[socket.id].owns) {
             socket.emit("message_to_client", "You have already created a room");
         } else {
+            if(!room_name.match(/^[A-Za-z]+[\w\-\:\.]*$/)){
+                socket.emit("message_to_client", "Room name must start with an alphabet letter.");
+                return;
+            }
             var name = validator.escape(room_name);
-            var password = validator.escape(password);
             if (rooms[name]) {
-                socket.emit("message_to_client", "The room name already exists.");
+                socket.emit("message_to_client", "Room name already exists.");
             } else {
+                var password = password;
                 if (!password || password === "") {
                     password = null;
+                } else {
+                    password = validator.escape(password);
                 }
                 var room = new Room(name, socket.id, password);
                 rooms[name] = room;
-                io.emit("room_list", {rooms: rooms, count: _.size(rooms)});
+                if (password) {
+                    io.emit("add_room", {room: name, password: true, count: _.size(rooms)});
+                } else {
+                    io.emit("add_room", {room: name, password: false, count: _.size(rooms)});
+                }
                 socket.join(name);
-                users[socket.id].owns = id;
-                users[socket.id].inrooms = id;
+                users[socket.id].owns = name;
+                users[socket.id].inroom = name;
                 room.addPerson(socket.id);
                 socket.emit("message_to_client", "Room " + name + " has been successfully created.");
-                socket.emit("room_identifier", {identifier: name});
-                io.to(name).emit("room_user_list", {
+                socket.emit("room_identifier", name, users[socket.id].name);
+                io.to(name).emit("create_room_user_list", {
                     users: updateUserList(room),
-                    owner: users[socket.id].name,
+                    owner: socket.id,
                     count: _.size(room.people)
                 });
             }
@@ -149,22 +211,27 @@ io.on('connection', function (socket) {
                 socket.emit("message_to_client", "You have been banned by the owner of the room");
                 return;
             }
-            if (room.checkPassword(password)) {
+            if (!room.checkPassword(password)) {
                 socket.emit("message_to_client", "Wrong password.");
                 return;
             }
             var user = users[socket.id];
+            users[socket.id].inroom = name;
             room.addPerson(socket.id);
-            socket.join(name);
             io.to(name).emit("message_to_client", user.name + " has connected to " + name + ".");
-            io.to(name).emit("room_user_list", {
+            io.to(name).emit("add_user", {
+                user: user.name,
+                id: user.id,
+                count: _.size(room.people)
+            });
+            socket.join(name);
+            socket.emit("create_room_user_list", {
                 users: updateUserList(room),
-                owner: users[room.owns].name,
+                owner: room.owner,
                 count: _.size(room.people)
             });
             socket.emit("message_to_client", "Welcome to room: " + name + ".");
-            socket.emit("room_identifier", {identifier: name});
-
+            socket.emit("room_identifier", name, users[room.owner].name);
         }
     });
 
@@ -183,39 +250,30 @@ io.on('connection', function (socket) {
             if (user.ownsRoom(name)) {
                 user.owns = null;
                 if (room.isEmpty()) {
+                    delete room.blacklist;
                     delete room;
-                    io.emit("room_list", {rooms: rooms, count: _.size(rooms)});
-                    io.emit("message_to_client", "Room: " + name + "has been removed");
+                    io.emit("remove_room", {room: name, count: _.size(rooms)});
+                    io.emit("message_to_client", "Room: " + name + " has been removed");
                 } else {
                     //tranfer the onwership to the next owner
                     var new_ownerID = room.transferOwner(false);
                     io.to(name).emit("message_to_client", "The owner of room is transferred to " + users[new_ownerID].name + ".");
+                    io.to(name).emit("update_owner", new_ownerID);
+                    io.to(name).emit("room_identifier", name, users[new_ownerID].name);
+
                 }
             }
-            io.to(name).emit("message_to_client", "User: " + user.name + "has left the room.");
-            io.to(name).emit("room_user_list", {
-                users: updateUserList(room),
-                owner: users[room.owns].name,
+            io.to(name).emit("message_to_client", "User: " + user.name + " has left the room.");
+            io.to(name).emit("remove_user", {
+                user: socket.id,
+                owner: room.owner,
                 count: _.size(room.people)
             });
+            socket.emit("remove_room_user_list");
+            socket.emit("room_identifier", "");
+            socket.emit("message_to_client", "You have left the room");
         }
     });
-
-    //socket.on('remove_room', function (room_name) {
-    //    var name = validator.escape(room_name);
-    //    var room = rooms[name];
-    //    if(!room) {
-    //        socket.emit("message_to_client", "The room does not exist.");
-    //    } else {
-    //        for(var i = 0; i < room.people.length; i++) {
-    //
-    //        }
-    //        //remove everyone out of room
-    //        delete room;
-    //        io.emit("room_list", {rooms: rooms, count: _.size(rooms)});
-    //        io.emit("message_to_client", "Room: " + name + "has been removed");
-    //    }
-    //});
 
     socket.on("kick_from_room", function (id) {
         var user = users[socket.id];
@@ -229,19 +287,19 @@ io.on('connection', function (socket) {
                 if (key.id === id)
                     return target = key;
             });
-
             target.leave(name);
-            target.emit("You have been kicked from the room.");
+            target.emit("message_to_client", "You have been kicked from the room.");
+            target.emit("remove_room_user_list");
             room.removePerson(id);
             users[id].inroom = null;
 
-            io.to(name).emit("message_to_client", "User: " + users[id].name + "has left the room.");
-            io.to(name).emit("room_user_list", {
-                users: updateUserList(room),
-                owner: users[room.owns].name,
+            io.to(name).emit("message_to_client", "User: " + users[id].name + " has left the room.");
+            io.to(name).emit("remove_user", {
+                user: id,
+                owner: room.owner,
                 count: _.size(room.people)
             });
-
+            socket.emit("room_identifier", "", "");
         }
     });
 
@@ -259,16 +317,18 @@ io.on('connection', function (socket) {
             });
             target.leave(name);
             target.emit("You have been banned from the room.");
+            target.emit("remove_room_user_list");
             room.removePerson(id);
             room.addToBlacklist(id);
             users[id].inroom = null;
 
-            io.to(name).emit("message_to_client", "User: " + users[id].name + "has left the room.");
-            io.to(name).emit("room_user_list", {
-                users: updateUserList(room),
-                owner: users[room.owns].name,
+            io.to(name).emit("message_to_client", "User: " + users[id].name + " has left the room.");
+            io.to(name).emit("remove_user", {
+                user: id,
+                owner: room.owner,
                 count: _.size(room.people)
             });
+            socket.emit("room_identifier", "", "");
         }
     });
 
@@ -282,6 +342,8 @@ io.on('connection', function (socket) {
             user.owns = null;
             targetUser.owns = name;
             rooms[name].owner = id;
+            io.to(name).emit("update_owner");
+            io.to(name).emit("room_identifier", name, users[id].name);
             io.to(name).emit("message_to_client", "The owner of room is transferred to " + targetUser.name + ".");
             var target = null;
             _.find(sockets, function (key) {
@@ -292,20 +354,22 @@ io.on('connection', function (socket) {
         }
     });
 
-    socket.on("send", function (receiver, message) {
+    socket.on("send", function (receiver, message, time) {
         var msg = validator.escape(message);
         var user = users[socket.id];
         if (!receiver || receiver === "") {
             //boardcast in the room
-            io.to(user.inroom).emit("chat", user.name + ": " + msg);
+            io.to(user.inroom).emit("chat", {user: user.name, msg: msg, time: time, whisper: false});
         } else {
             //whisper
+            console.log("enter");
             var target = null;
             _.find(sockets, function (key) {
                 if (key.id === receiver)
                     return target = key;
             });
-            target.emit("whisper", user.name + ": " + msg);
+            target.emit("chat", {user: user.name, msg: msg, time: time, whisper: true});
+            socket.emit("chat", {user: user.name, msg: msg, time: time, whisper: true});
         }
     });
 });

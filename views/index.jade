@@ -1,37 +1,100 @@
 extends layout
 
 block content
-  h1= title
-  p Welcome to #{title}
-  input(type=text id="message_input")
-  button(onclick="sendMessage()") send
-  button(id="create_room" class="btn btn-default") create room
-  div(id="chatlog")
-  div(id="room_list")
+  //html codes are based on http://bootsnipp.com/snippets/featured/collapsible-chat-widget
+  link(rel='stylesheet' href='/stylesheets/main.css')
+  #message_to_client.alert.alert-info(style='margin-left: 20px;')
+  .title
+    h4#username Hello, Guest!
+  #main_window.container
+    .row
+        .col-md-5
+            .panel.panel-primary
+                .panel.panel-heading
+                    span#room_name Room:
+                .panel-body
+                    ul.chat
+                .panel-footer
+                    .input-group
+                        input#message.form-control.input-sm(type='text', placeholder='Type your message here...')
+                        span.input-group-btn
+                            button#send_btn.btn.btn-warning.btn-sm(disabled='disabled')
+                                | Send
+        .col-md-3
+            .panel.panel-primary
+                .panel-heading
+                    span User List
+                .panel-body
+                    ul#user_list.list-group
+                .panel-footer
+                    span#user_count users in room
+        .col-md-2
+            .panel.panel-primary
+                .panel-heading
+                    span Room List
+                .panel-body
+                    ul#room_list.list-group
+                .panel-footer
+                    span#room_count available rooms
+        .col-md-2
+            button.btn.btn-default.btn-block(type='button', data-toggle='modal', data-target='#sign_in_modal') Sign in
+            br
+            button.btn.btn-primary.btn-block(type='button', data-toggle='modal', data-target='#create_modal' disabled='disabled') Create Room
+            button#leave_room.btn.btn-danger.btn-block(type='button' disabled='disabled') Leave Room
+            br
+            h4#total_user
+
+  #create_modal.modal.fade(role='dialog')
+    .modal-dialog
+        // Modal content
+        .modal-content
+            .modal-header
+                button.close(type='button', data-dismiss='modal') ×
+                h4.modal-title Input the room name you want to create
+            .modal-body
+                label.control-label(for='room_name_input') Room name:
+                input#room_name_input.form-control(type='text')
+                label.control-label(for='room_password') Room password:
+                input#room_password.form-control(type='password')
+            .modal-footer
+                button#create_room.btn.btn-primary(type='button') Create
+  #whisper_modal.modal.fade(role='dialog')
+    .modal-dialog
+        // Modal content
+        .modal-content
+            .modal-header
+                button.close(type='button', data-dismiss='modal') ×
+                h4.modal-title Write down your whisper
+            .modal-body
+                label.control-label(for='whisper') Message:
+                input#whisper.form-control(type='text')
+            .modal-footer
+                button#send_whisper.btn.btn-primary(type='button') Send
+  #password_modal.modal.fade(role='dialog')
+    .modal-dialog
+        // Modal content
+        .modal-content
+            .modal-header
+                button.close(type='button', data-dismiss='modal') ×
+                h4.modal-title Input the password
+            .modal-body
+                label.control-label(for='password_to_join') Password:
+                input#password_to_join.form-control(type='password')
+            .modal-footer
+                button#join_password.btn.btn-primary(type='button') Join
+  #sign_in_modal.modal.fade(role='dialog')
+    .modal-dialog
+        // Modal content
+        .modal-content
+            .modal-header
+                button.close(type='button', data-dismiss='modal') ×
+                h4.modal-title Create a username
+            .modal-body
+                label.control-label(for='username_input') Username:
+                input#username_input.form-control(type='text')
+            .modal-footer
+                button#sign_in.btn.btn-primary(type='button') Sign in
+
 
   script(src='/socket.io/socket.io.js')
-  script(type='text/javascript').
-    var socket = io.connect();
-    socket.on("message_to_client", function (data) {
-      //Append an HR thematic break and the escaped HTML of the new message
-      document.getElementById("chatlog").appendChild(document.createElement("hr"));
-      document.getElementById("chatlog").appendChild(document.createTextNode(data['message']));
-    });
-
-    socket.on("rooms", function(data){
-      console.log("enter");
-      document.getElementById("room_list").appendChild(document.createTextNode(data['rooms']));
-    });
-
-    function sendMessage() {
-
-      var msg = document.getElementById("message_input").value;
-      console.log(msg);
-      socket.emit("message_to_server", {message: msg});
-
-    }
-
-    $("#create_room").click(function(){
-      console.log("haha");
-      socket.emit("create_room", {room_name: 'room1'});
-    });
+  script(src='/javascripts/main.js')
