@@ -7,11 +7,17 @@ var own = false;
 $("#message_to_client").hide();
 var socket = io.connect();
 socket.on("message_to_client", function (data) {
+    if(!username) {
+        return;
+    }
     $("#message_to_client").text(data);
     $("#message_to_client").show();
 });
 
 socket.on("server_joined", function (name, id) {
+    if(!username) {
+        return;
+    }
     username = name;
     userId = id;
     $("button").removeAttr("disabled");
@@ -24,6 +30,9 @@ socket.on("total_user", function (data) {
 });
 
 socket.on("create_room_list", function (data) {
+    if(!username) {
+        return;
+    }
     var rooms = data['rooms'];
     var count = data['count'];
     var room_list = $("#room_list");
@@ -51,7 +60,7 @@ socket.on("create_room_list", function (data) {
         li.appendChild(button);
         if (room.password == "true" || room.password == true) {
             var button = document.createElement("button");
-            button.setAttribute("class", "btn btn-xs btn-success");
+            button.setAttribute("class", "btn btn-xs btn-warning");
             button.setAttribute("disabled", "disabled");
             button.setAttribute("id", room.name);
             var span = document.createElement("span");
@@ -65,6 +74,9 @@ socket.on("create_room_list", function (data) {
 });
 
 socket.on("add_room", function (data) {
+    if(!username) {
+        return;
+    }
     var room = data['room'];
     var password = data['password'];
     var count = data['count'];
@@ -90,7 +102,7 @@ socket.on("add_room", function (data) {
     li.appendChild(button);
     if (password == "true" || password == true) {
         var button = document.createElement("button");
-        button.setAttribute("class", "btn btn-xs btn-success");
+        button.setAttribute("class", "btn btn-xs btn-warning");
         button.setAttribute("disabled", "disabled");
         button.setAttribute("id", room.name);
         var span = document.createElement("span");
@@ -103,6 +115,9 @@ socket.on("add_room", function (data) {
 });
 
 socket.on("remove_room", function (data) {
+    if(!username) {
+        return;
+    }
     var room = data['room'];
     var count = data['count'];
     $("#" + room).parent().remove();
@@ -110,6 +125,9 @@ socket.on("remove_room", function (data) {
 });
 
 socket.on("room_identifier", function (room_name, owner) {
+    if(!username) {
+        return;
+    }
     if(room_name  == ""){
         $("#room_name").text("Room:");
     } else {
@@ -118,6 +136,9 @@ socket.on("room_identifier", function (room_name, owner) {
 });
 
 socket.on("create_room_user_list", function (data) {
+    if(!username) {
+        return;
+    }
     var users = data['users'];
     var owner = data['owner'];
     var count = data['count'];
@@ -187,6 +208,9 @@ socket.on("create_room_user_list", function (data) {
 });
 
 socket.on("add_user", function (data) {
+    if(!username) {
+        return;
+    }
     var user = data['user'];
     var id = data['id'];
     var count = data['count'];
@@ -239,6 +263,9 @@ socket.on("add_user", function (data) {
 });
 
 socket.on("remove_user", function (data) {
+    if(!username) {
+        return;
+    }
     var user = data['user'];
     var owner = data['owner'];
     var count = data['count'];
@@ -280,15 +307,24 @@ socket.on("remove_user", function (data) {
 });
 
 socket.on("remove_room_user_list", function () {
+    if(!username) {
+        return;
+    }
     own = false;
     $("#user_list").html("");
 });
 
 socket.on("update_owner", function (owner) {
+    if(!username) {
+        return;
+    }
     $("#" + owner.substring(2)).last().remove();
 });
 
 socket.on("chat", function (data) {
+    if(!username) {
+        return;
+    }
     var user = data['user'];
     var msg = data['msg'];
     var time = convertTime(data['time']);
@@ -365,6 +401,7 @@ $("#create_room").click(function () {
         password = null;
     }
     socket.emit("create_room", name, password);
+    $("#create_modal").modal('hide');
 });
 
 $("#leave_room").click(function () {
@@ -375,12 +412,14 @@ $("#join_password").click(function () {
     var id = $(this).attr("room");
     var password = $("#password_to_join").val();
     socket.emit("join_room", id, password);
+    $("#password_modal").modal('hide');
 });
 
 $("#send_whisper").click(function () {
     var id = $(this).attr("user");
     var message = $("#whisper").val();
     socket.emit("send", id, message, new Date().getTime());
+    $("#whisper_modal").modal('hide');
 });
 
 $("#send_btn").click(function () {
@@ -391,6 +430,7 @@ $("#send_btn").click(function () {
 $("#sign_in").click(function () {
     username = $("#username_input").val();
     socket.emit("join_server", username);
+    $("#sign_in_modal").modal('hide');
 });
 
 function convertTime(time) {
