@@ -1,0 +1,37 @@
+extends layout
+
+block content
+  h1= title
+  p Welcome to #{title}
+  input(type=text id="message_input")
+  button(onclick="sendMessage()") send
+  button(id="create_room" class="btn btn-default") create room
+  div(id="chatlog")
+  div(id="room_list")
+
+  script(src='/socket.io/socket.io.js')
+  script(type='text/javascript').
+    var socket = io.connect();
+    socket.on("message_to_client", function (data) {
+      //Append an HR thematic break and the escaped HTML of the new message
+      document.getElementById("chatlog").appendChild(document.createElement("hr"));
+      document.getElementById("chatlog").appendChild(document.createTextNode(data['message']));
+    });
+
+    socket.on("rooms", function(data){
+      console.log("enter");
+      document.getElementById("room_list").appendChild(document.createTextNode(data['rooms']));
+    });
+
+    function sendMessage() {
+
+      var msg = document.getElementById("message_input").value;
+      console.log(msg);
+      socket.emit("message_to_server", {message: msg});
+
+    }
+
+    $("#create_room").click(function(){
+      console.log("haha");
+      socket.emit("create_room", {room_name: 'room1'});
+    });
